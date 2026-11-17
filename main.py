@@ -1,11 +1,10 @@
 import argparse
-import json
 import os
+import sys
 from dotenv import load_dotenv
 from openai import OpenAI
 from prompts import system_prompt
 from call_function import available_functions, call_function
-from call_function import available_functions
 
 
 def main():
@@ -30,33 +29,42 @@ def main():
         {"role": "user", "content": args.user_prompt},
     ]
 
-    response = client.chat.completions.create(
-        model="openrouter/free",
-        messages=messages,
-        tools=available_functions,
-        temperature=0,
-    )
-
-    if response.usage is None:
-        raise RuntimeError("No usage data in the response. The API request may have failed.")
-
     if args.verbose:
         print(f"User prompt: {args.user_prompt}")
-        print(f"Prompt tokens: {response.usage.prompt_tokens}")
-        print(f"Response tokens: {response.usage.completion_tokens}")
-        print("Response:")
 
-    message = response.choices[0].message
+    for _ in range(20):
+        response = client.chat.completions.create(
+            model="openrouter/free",
+            messages=messages,
+            tools=available_functions,
+            temperature=0,
+        )
 
-    if message.tool_calls:
-        for tool_call in message.tool_calls:
-            result_message = call_function(tool_call, verbose=args.verbose)
-            if not result_message["content"]:
-                raise RuntimeError("Tool call returned no content.")
-            if args.verbose:
-                print(f"-> {result_message['content']}")
-    else:
-        print(message.content)
+        if response.usage is None:
+            raise RuntimeError("No usage data in the response. The API request may have failed.")
+
+        if args.verbose:
+            print(f"Prompt tokens: {response.usage.prompt_tokens}")
+            print(f"Response tokens: {response.usage.completion_tokens}")
+
+        message = response.choices[0].message
+        messages.append(message)
+
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                result_message = call_function(tool_call, verbose=args.verbose)
+                if not result_message["content"]:
+                    raise RuntimeError("Tool call returned no content.")
+                if args.verbose:
+                    print(f"-> {result_message['content']}")
+                messages.append(result_message)
+        else:
+            print("Final response:")
+            print(message.content)
+            return
+
+    print("Error: reached the maximum number of iterations without a final response.")
+    sys.exit(1)
 
 
 if __name__ == "__main__":
