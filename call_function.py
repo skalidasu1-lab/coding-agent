@@ -23,7 +23,15 @@ function_map: dict[str, Callable[..., str]] = {
 
 def call_function(tool_call, verbose: bool = False) -> dict:
     function_name = tool_call.function.name
-    function_args = json.loads(tool_call.function.arguments or "{}")
+    # function_args = json.loads(tool_call.function.arguments or "{}")
+    try:
+        function_args = json.loads(tool_call.function.arguments or "{}")
+    except json.JSONDecodeError as e:
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": f"Error: invalid JSON in function arguments: {e}. Use double quotes in valid JSON.",
+        }
 
     if verbose:
         print(f" - Calling function: {function_name}({function_args})")
