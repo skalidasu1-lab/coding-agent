@@ -11,7 +11,10 @@ def main():
     parser = argparse.ArgumentParser(description="Chatbot")
     parser.add_argument("user_prompt", type=str, help="User prompt")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--workdir", default="calculator", help="Folder the agent may work in")
     args = parser.parse_args()
+    if not os.path.isdir(args.workdir):
+        raise RuntimeError(f"Working directory not found: {args.workdir}")
 
     load_dotenv()
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -52,7 +55,8 @@ def main():
 
         if message.tool_calls:
             for tool_call in message.tool_calls:
-                result_message = call_function(tool_call, verbose=args.verbose)
+                # result_message = call_function(tool_call, verbose=args.verbose)
+                result_message = call_function(tool_call, working_directory=args.workdir, verbose=args.verbose)
                 if not result_message["content"]:
                     raise RuntimeError("Tool call returned no content.")
                 if args.verbose:
