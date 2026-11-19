@@ -1,14 +1,15 @@
 import os
 import subprocess
 import sys
+from config import clean_env
 
 
 def run_python_file(
     working_directory: str, file_path: str, args: list[str] | None = None
 ) -> str:
     try:
-        working_dir_abs = os.path.abspath(working_directory)
-        abs_file_path = os.path.normpath(os.path.join(working_dir_abs, file_path))
+        working_dir_abs = os.path.realpath(working_directory)
+        abs_file_path = os.path.realpath(os.path.join(working_dir_abs, file_path))
 
         valid_target = os.path.commonpath([working_dir_abs, abs_file_path]) == working_dir_abs
         if not valid_target:
@@ -30,6 +31,7 @@ def run_python_file(
             capture_output=True,
             text=True,
             timeout=30,
+            env=clean_env(),
         )
 
         output = []

@@ -27,15 +27,21 @@ function_map: dict[str, Callable[..., str]] = {
 # def call_function(tool_call, verbose: bool = False) -> dict:
 def call_function(tool_call, working_directory: str = "./calculator", verbose: bool = False) -> dict:
     function_name = tool_call.function.name
-    # function_args = json.loads(tool_call.function.arguments or "{}")
-    try:
-        function_args = json.loads(tool_call.function.arguments or "{}")
-    except json.JSONDecodeError as e:
+
+    def error(message: str) -> dict:
         return {
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": f"Error: invalid JSON in function arguments: {e}. Use double quotes in valid JSON.",
+            "content": f"Error: {message}",
         }
+
+    try:
+        function_args = json.loads(tool_call.function.arguments or "{}")
+    except json.JSONDecodeError as e:
+        return error(f"invalid JSON in function arguments: {e}. Use double quotes in valid JSON.")
+
+    if not isinstance(function_args, dict):
+        return error("function arguments must be a JSON object")
 
     if verbose:
         print(f" - Calling function: {function_name}({function_args})")
@@ -43,15 +49,14 @@ def call_function(tool_call, working_directory: str = "./calculator", verbose: b
         print(f" - Calling function: {function_name}")
 
     if function_name not in function_map:
-        return {
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": f"Error: Unknown function: {function_name}",
-        }
+        return error(f"Unknown function: {function_name}")
 
-    # function_args["working_directory"] = "./calculator"
     function_args["working_directory"] = working_directory
-    result = function_map[function_name](**function_args)
+
+    try:
+        result = function_map[function_name](**function_args)
+    except Exception as e:
+        return error(f"calling {function_name} failed: {e}")
 
     return {
         "role": "tool",

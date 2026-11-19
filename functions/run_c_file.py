@@ -40,6 +40,7 @@ def run_c_file(
             capture_output=True,
             text=True,
             timeout=30,
+            env=clean_env(),
         )
 
         output = []

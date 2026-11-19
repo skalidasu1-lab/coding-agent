@@ -2,7 +2,8 @@ import argparse
 import os
 import sys
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
+from config import MAX_ROUNDS
 from prompts import system_prompt
 from call_function import available_functions, call_function
 
@@ -13,6 +14,7 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--workdir", default="calculator", help="Folder the agent may work in")
     args = parser.parse_args()
+
     if not os.path.isdir(args.workdir):
         raise RuntimeError(f"Working directory not found: {args.workdir}")
 
@@ -35,13 +37,19 @@ def main():
     if args.verbose:
         print(f"User prompt: {args.user_prompt}")
 
-    for _ in range(20):
-        response = client.chat.completions.create(
-            model="openrouter/free",
-            messages=messages,
-            tools=available_functions,
-            temperature=0,
-        )
+    seen_calls: dict[tuple[str, str], int] = {}
+
+    for _ in range(MAX_ROUNDS):
+        try:
+            response = client.chat.completions.create(
+                model="openrouter/free",
+                messages=messages,
+                tools=available_functions,
+                temperature=0,
+            )
+        except RateLimitError:
+            print("Error: OpenRouter rate limit reached (probably the free daily limit). Try again later.")
+            sys.exit(1)
 
         if response.usage is None:
             raise RuntimeError("No usage data in the response. The API request may have failed.")
@@ -55,8 +63,20 @@ def main():
 
         if message.tool_calls:
             for tool_call in message.tool_calls:
-                # result_message = call_function(tool_call, verbose=args.verbose)
-                result_message = call_function(tool_call, working_directory=args.workdir, verbose=args.verbose)
+                key = (tool_call.function.name, tool_call.function.arguments)
+                seen_calls[key] = seen_calls.get(key, 0) + 1
+
+                if seen_calls[key] > 2:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": "Error: you already made this exact call several times. Use the earlier results and give your final answer.",
+                    })
+                    continue
+
+                result_message = call_function(
+                    tool_call, working_directory=args.workdir, verbose=args.verbose
+                )
                 if not result_message["content"]:
                     raise RuntimeError("Tool call returned no content.")
                 if args.verbose:
@@ -67,7 +87,7 @@ def main():
             print(message.content)
             return
 
-    print("Error: reached the maximum number of iterations without a final response.")
+    print("Error: reached the maximum number of rounds without a final response.")
     sys.exit(1)
 
 
