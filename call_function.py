@@ -6,6 +6,7 @@ from functions.get_file_content import get_file_content, schema_get_file_content
 from functions.run_python_file import run_python_file, schema_run_python_file
 from functions.write_file import write_file, schema_write_file
 from functions.run_c_file import run_c_file, schema_run_c_file
+from functions.edit_file import edit_file, schema_edit_file
 
 available_functions = [
     schema_get_files_info,
@@ -13,6 +14,7 @@ available_functions = [
     schema_run_python_file,
     schema_write_file,
     schema_run_c_file,
+    schema_edit_file,
 ]
 
 function_map: dict[str, Callable[..., str]] = {
@@ -21,6 +23,7 @@ function_map: dict[str, Callable[..., str]] = {
     "run_python_file": run_python_file,
     "write_file": write_file,
     "run_c_file": run_c_file,
+    "edit_file": edit_file,
 }
 
 
