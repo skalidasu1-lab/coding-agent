@@ -1,0 +1,1 @@
+Add two functions to ops.py: multiply(a, b), and divide(a, b), which raises ValueError when b is 0. The file test_ops.py describes the expected behavior.

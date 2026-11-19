@@ -1,0 +1,1 @@
+is_palindrome in palindrome.py should ignore case, spaces and punctuation. The tests in test_palindrome.py fail. Fix the function.
