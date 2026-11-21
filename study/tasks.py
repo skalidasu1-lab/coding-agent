@@ -10,6 +10,7 @@ from config import clean_env
 
 TASKS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tasks")
 FALLBACK_ANSWER = "No preference, use your best judgment."
+PRACTICE_ID = "t0_practice"
 
 
 def task_ids() -> list[str]:
@@ -19,6 +20,9 @@ def task_ids() -> list[str]:
         name for name in os.listdir(TASKS_DIR)
         if os.path.isdir(os.path.join(TASKS_DIR, name))
     )
+def analysed_task_ids() -> list[str]:
+    """The six tasks used in the analysis (the practice task is excluded)."""
+    return [t for t in task_ids() if t != PRACTICE_ID]
 
 
 def load_task(task_id: str) -> dict:
