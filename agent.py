@@ -1,11 +1,37 @@
+import json
+import time
+
 from openai import RateLimitError
 
 from call_function import available_functions, call_function
 
+ASK_TOOL_NAME = "ask_user"
 
-def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools=None, temperature=0):
+
+def handle_question(tool_call, ask_callback, max_questions, stats):
+    def reply(text):
+        return {"role": "tool", "tool_call_id": tool_call.id, "content": text}
+
+    try:
+        arguments = json.loads(tool_call.function.arguments or "{}")
+        question = str(arguments["question"]).strip()
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return reply("Error: ask_user needs a JSON object with a 'question' string.")
+    if not question:
+        return reply("Error: the question was empty.")
+    if ask_callback is None or len(stats["questions"]) >= max_questions:
+        return reply("Error: no more questions are allowed. Use your best judgment and continue.")
+
+    answer = ask_callback(question)
+    stats["questions"].append({"question": question, "answer": answer})
+    return reply(answer)
+
+
+def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools=None,
+              temperature=0, ask_callback=None, max_questions=0):
     """Run the tool-calling loop and return a dict describing what happened."""
     tools = available_functions if tools is None else tools
+    allowed = {tool["function"]["name"] for tool in tools}
     stats = {
         "finished": False,
         "final": None,
@@ -13,10 +39,13 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
         "rounds": 0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
+        "questions": [],
+        "per_round": [],
     }
     seen_calls: dict[tuple[str, str], int] = {}
 
     for _ in range(max_rounds):
+        started = time.time()
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -27,11 +56,20 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
         except RateLimitError:
             stats["error"] = "rate_limit"
             return stats
+        elapsed = round(time.time() - started, 2)
 
-        stats["rounds"] += 1
+        round_prompt = round_completion = 0
         if response.usage is not None:
-            stats["prompt_tokens"] += response.usage.prompt_tokens
-            stats["completion_tokens"] += response.usage.completion_tokens
+            round_prompt = response.usage.prompt_tokens
+            round_completion = response.usage.completion_tokens
+        stats["rounds"] += 1
+        stats["prompt_tokens"] += round_prompt
+        stats["completion_tokens"] += round_completion
+        stats["per_round"].append({
+            "prompt_tokens": round_prompt,
+            "completion_tokens": round_completion,
+            "seconds": elapsed,
+        })
 
         message = response.choices[0].message
         messages.append(message)
@@ -42,9 +80,22 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
             return stats
 
         for tool_call in message.tool_calls:
-            key = (tool_call.function.name, tool_call.function.arguments)
-            seen_calls[key] = seen_calls.get(key, 0) + 1
+            name = tool_call.function.name
 
+            if name not in allowed:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"Error: Unknown function: {name}",
+                })
+                continue
+
+            if name == ASK_TOOL_NAME:
+                messages.append(handle_question(tool_call, ask_callback, max_questions, stats))
+                continue
+
+            key = (name, tool_call.function.arguments)
+            seen_calls[key] = seen_calls.get(key, 0) + 1
             if seen_calls[key] > 2:
                 messages.append({
                     "role": "tool",
