@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coding assistant study</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; }
+  label { display: block; margin: .6rem 0 .2rem; font-weight: 600; }
+  input[type=text], textarea { width: 100%; box-sizing: border-box; padding: .5rem; font: inherit; }
+  textarea { min-height: 5rem; }
+  button { font: inherit; padding: .5rem .9rem; margin: .3rem .3rem .3rem 0; cursor: pointer; }
+  .card, .bubble, pre { border: 1px solid #8884; border-radius: 8px; padding: .6rem .8rem; margin: .5rem 0; }
+  .card { background: #8881; }
+  .user { margin-left: 3rem; background: #3b82f622; }
+  .assistant, .question { margin-right: 3rem; background: #8882; white-space: pre-wrap; }
+  .note { opacity: .75; }
+  pre { white-space: pre-wrap; overflow-x: auto; font-size: .9rem; }
+  .error { color: #b91c1c; }
+</style>
+</head>
+<body>
+<h1>Coding assistant study</h1>
+
+<section id="start">
+  <p>Experimenter: confirm that the consent form is signed and the pre-survey is complete, then start.</p>
+  <label for="code">Experimenter code (shown in the terminal)</label>
+  <input type="text" id="code" autocomplete="off">
+  <label for="pid">Participant ID (only to resume an existing participant)</label>
+  <input type="text" id="pid" autocomplete="off">
+  <label><input type="checkbox" id="consent"> Consent is signed and the pre-survey is done</label>
+  <button id="go">Start session</button>
+  <p id="startError" class="error"></p>
+</section>
+
+<section id="session" hidden>
+  <div id="log"></div>
+  <div id="message" class="error"></div>
+  <div id="controls"></div>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let after = 0;
+let shown = "init";
+let busy = false;
+let timer = null;
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  let data = {};
+  try { data = await response.json(); } catch (e) { /* no body */ }
+  if (!response.ok) { throw new Error(data.detail || ("Error " + response.status)); }
+  return data;
+}
+
+function post(path, body) {
+  return api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) { node.className = className; }
+  if (text !== undefined) { node.textContent = text; }
+  return node;
+}
+
+function button(label, handler) {
+  const node = el("button", "", label);
+  node.addEventListener("click", handler);
+  return node;
+}
+
+function addEvent(event) {
+  let node;
+  switch (event.type) {
+    case "started":
+      node = el("div", "card", "Participant ID: " + event.participant_id + " (write it on the survey forms)");
+      break;
+    case "say": node = el("div", "note", event.text); break;
+    case "task":
+      node = el("div", "card");
+      node.appendChild(el("strong", "", "Task: " + event.title));
+      node.appendChild(el("p", "", "What you want: " + event.intent));
+      node.appendChild(el("p", "note", event.instruction));
+      break;
+    case "user": node = el("div", "bubble user", event.text); break;
+    case "assistant": node = el("div", "bubble assistant", event.text); break;
+    case "question": node = el("div", "bubble question", "The assistant asks: " + event.text); break;
+    case "output": node = el("pre", "", event.text); break;
+    case "rating": node = el("div", "note", "How satisfied are you with the result? (1 = not at all, 5 = very)"); break;
+    case "technical": node = el("div", "error", event.text); break;
+    case "finished": node = el("div", "card", "All tasks are done. Please complete the post-survey and enter your participant ID."); break;
+    case "error": node = el("div", "error", event.text); break;
+    default: return;
+  }
+  $("log").appendChild(node);
+  node.scrollIntoView({ block: "end" });
+}
+
+function showControls(waiting, finished) {
+  const key = finished ? "finished" : (waiting || "working");
+  if (key === shown) { return; }
+  shown = key;
+  const box = $("controls");
+  box.replaceChildren();
+  if (key === "finished") { return; }
+  if (key === "working") {
+    box.appendChild(el("p", "note", "The assistant is working. This can take a minute."));
+  } else if (key === "prompt" || key === "answer") {
+    const area = el("textarea");
+    area.placeholder = key === "prompt" ? "Your request" : "Your answer";
+    box.appendChild(area);
+    box.appendChild(button(key === "prompt" ? "Send request" : "Send answer", () => send(key, area.value)));
+  } else if (key === "review") {
+    const area = el("textarea");
+    area.placeholder = "Type your next request, or use the buttons below";
+    box.appendChild(area);
+    box.appendChild(button("Send request", () => send("prompt", area.value)));
+    box.appendChild(el("br"));
+    const args = el("input");
+    args.type = "text";
+    args.placeholder = "Arguments to try, for example: 100 C";
+    box.appendChild(args);
+    box.appendChild(button("Try the program", () => send("run", args.value)));
+    box.appendChild(button("List files", () => send("files", "")));
+    box.appendChild(button("It does what I wanted (done)", () => send("done", "")));
+  } else if (key === "rating") {
+    for (let i = 1; i <= 5; i++) { box.appendChild(button(String(i), () => send("rating", "", i))); }
+  } else if (key === "technical") {
+    box.appendChild(el("p", "note", "Experimenter only:"));
+    box.appendChild(button("Retry this task", () => send("retry", "")));
+    box.appendChild(button("Skip this task", () => send("skip", "")));
+  }
+}
+
+async function send(kind, text, rating) {
+  if (busy) { return; }
+  busy = true;
+  $("message").textContent = "";
+  try {
+    await post("/api/send", { kind: kind, text: text, rating: rating === undefined ? null : rating });
+    if (kind !== "run" && kind !== "files") {
+      shown = "sending";
+      $("controls").replaceChildren(el("p", "note", "Sending..."));
+    }
+  } catch (e) {
+    $("message").textContent = e.message;
+  }
+  busy = false;
+}
+
+async function poll() {
+  try {
+    const data = await api("/api/events?after=" + after);
+    if (!data.active) { return; }
+    for (const event of data.events) { addEvent(event); after = event.id; }
+    showControls(data.waiting, data.finished);
+  } catch (e) { /* the server may be busy; try again */ }
+}
+
+function begin() {
+  $("start").hidden = true;
+  $("session").hidden = false;
+  if (timer === null) { timer = setInterval(poll, 1000); }
+  poll();
+}
+
+$("go").addEventListener("click", async () => {
+  $("startError").textContent = "";
+  try {
+    await post("/api/start", {
+      code: $("code").value.trim(),
+      participant_id: $("pid").value.trim() || null,
+      consent_confirmed: $("consent").checked,
+    });
+    begin();
+  } catch (e) { $("startError").textContent = e.message; }
+});
+
+(async () => {
+  try {
+    const data = await api("/api/events?after=0");
+    if (data.active) { begin(); }
+  } catch (e) { /* not started yet */ }
+})();
+</script>
+</body>
+</html>
