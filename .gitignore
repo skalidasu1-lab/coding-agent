@@ -12,3 +12,6 @@ wheels/
 playground/
 sandbox/
 *.out
+study_data/
+study/task_bank.py
+study/tasks/

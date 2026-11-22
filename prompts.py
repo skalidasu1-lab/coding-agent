@@ -1,4 +1,6 @@
-system_prompt = """
+from study.design import Policy
+
+system_prompt ="""
 You are a helpful AI coding agent working on a Python project in the working directory.
 
 When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
@@ -22,3 +24,14 @@ Guidelines:
 
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
 """
+STUDY_BASE_PROMPT = """
+You are a helpful AI coding agent. You work in a working directory and can list files, read files, write or edit files, and run Python files.
+
+The program the user wants must be written in a file named main.py in the working directory. The user will run it from the command line and pass its inputs as command-line arguments. All paths you provide are relative to the working directory.
+""".strip()
+
+POLICY_PROMPTS = {
+    Policy.NEVER: "Policy: work independently. If the request leaves details unspecified, make reasonable assumptions yourself and mention them briefly in your final answer. Choose the most common, conventional behavior when you have to decide between options. Do not ask the user any questions. Implement the program, test it by running it, and then give your final answer.",
+    Policy.WHEN_UNCLEAR: "Policy: if the request is clear enough to implement, proceed without asking. If it leaves out important details that change how the program should behave, ask the user a short question with the ask_user tool before writing code. Ask only what you need, at most three questions in total. Then implement the program, test it by running it, and give your final answer.",
+    Policy.ALWAYS: "Policy: before writing any code, always use the ask_user tool to ask the user at least one short question about the details of what they want, even if the request seems clear. Ask only what you need, at most three questions in total. Then implement the program, test it by running it, and give your final answer.",
+}
