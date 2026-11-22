@@ -6,9 +6,11 @@ import subprocess
 import sys
 import tempfile
 
-from config import clean_env
+from config import child_kwargs, clean_env
 
-TASKS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tasks")
+TASKS_DIR = os.environ.get("STUDY_TASKS_DIR") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "tasks"
+)
 FALLBACK_ANSWER = "No preference, use your best judgment."
 PRACTICE_ID = "t0_practice"
 
@@ -42,24 +44,49 @@ def canned_answer(task: dict, question: str) -> str:
 
 
 def grade(task_id: str, project_dir: str) -> dict:
-    """Run the hidden tests against a copy of project_dir. The tests are never
-    placed in the folder the agent works in."""
+    """Run the hidden tests against a copy of project_dir.
+
+    Grading folder layout:
+        grader/test_hidden.py   the hidden tests (never inside the agent's folder)
+        grader/program/         a copy of the agent's work
+
+    The test process runs with grader/ as its working directory, so files the agent
+    created (for example one named subprocess.py) cannot shadow standard modules.
+    """
     hidden = os.path.join(TASKS_DIR, task_id, "hidden_tests", "test_hidden.py")
     with tempfile.TemporaryDirectory() as tmp:
-        work = os.path.join(tmp, "work")
-        shutil.copytree(project_dir, work, ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copy(hidden, os.path.join(work, "test_hidden.py"))
+        grader = os.path.join(tmp, "grader")
+        program = os.path.join(grader, "program")
+        shutil.copytree(project_dir, program, ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copy(hidden, os.path.join(grader, "test_hidden.py"))
         try:
             result = subprocess.run(
                 [sys.executable, "-m", "unittest", "test_hidden"],
-                cwd=work,
+                cwd=grader,
                 capture_output=True,
                 text=True,
                 timeout=60,
                 env=clean_env(),
+                **child_kwargs(),
             )
         except subprocess.TimeoutExpired:
             return {"passed": False, "score": 0.0, "ran": 0, "failed": 0, "timeout": True}
+
+    report = result.stderr
+    ran_match = re.search(r"Ran (\d+) test", report)
+    ran = int(ran_match.group(1)) if ran_match else 0
+    failed = 0
+    failed_match = re.search(r"FAILED \(([^)]*)\)", report)
+    if failed_match:
+        failed = sum(int(n) for n in re.findall(r"=(\d+)", failed_match.group(1)))
+    score = (ran - failed) / ran if ran else 0.0
+    return {
+        "passed": result.returncode == 0 and ran > 0,
+        "score": round(score, 3),
+        "ran": ran,
+        "failed": failed,
+        "timeout": False,
+    }
 
     report = result.stderr
     ran_match = re.search(r"Ran (\d+) test", report)

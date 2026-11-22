@@ -41,6 +41,7 @@ def run_c_file(
             text=True,
             timeout=30,
             env=clean_env(),
+            **child_kwargs(),
         )
 
         output = []

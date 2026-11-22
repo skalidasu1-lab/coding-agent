@@ -1,7 +1,7 @@
 import os
 import subprocess
 import sys
-from config import clean_env
+from config import child_kwargs, clean_env
 
 
 def run_python_file(
@@ -32,6 +32,7 @@ def run_python_file(
             text=True,
             timeout=30,
             env=clean_env(),
+            **child_kwargs(),
         )
 
         output = []

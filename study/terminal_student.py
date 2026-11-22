@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import sys
 
-from config import clean_env
+from config import child_kwargs, clean_env
 from study.design import Clarity
 
 CLARITY_INSTRUCTIONS = {
@@ -74,7 +74,7 @@ class TerminalStudent:
         try:
             result = subprocess.run(
                 [sys.executable, "main.py", *args], cwd=project_dir,
-                capture_output=True, text=True, timeout=10, env=clean_env(),
+                capture_output=True, text=True, timeout=10, env=clean_env(),**child_kwargs(),
             )
         except subprocess.TimeoutExpired:
             self.out("The program did not finish within 10 seconds.")

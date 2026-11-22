@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from agent import run_agent
 from study.conditions import build_system_prompt, max_questions_for_policy, tools_for_policy
 from study.design import MAX_AGENT_ROUNDS, MAX_STUDENT_PROMPTS, TASK_TIME_LIMIT_SECONDS
+from study.safety import flag_suspicious
 from study.tasks import grade
 
 
@@ -22,6 +23,7 @@ def run_task_session(client, model, task, policy, clarity, student, participant_
     prompts: list[str] = []
     questions: list[dict] = []
     per_round: list[dict] = []
+    tool_log: list[dict] = []
     prompt_tokens = completion_tokens = rounds = 0
     final_text = None
     end_reason = None
@@ -52,6 +54,7 @@ def run_task_session(client, model, task, policy, clarity, student, participant_
             rounds += stats["rounds"]
             questions.extend(stats["questions"])
             per_round.extend(stats["per_round"])
+            tool_log.extend(stats["tool_log"])
 
             if stats["error"] == "rate_limit":
                 failure = "rate_limit"
@@ -109,4 +112,6 @@ def run_task_session(client, model, task, policy, clarity, student, participant_
         "tests_ran": result["ran"],
         "rating": rating,
         "program_runs": getattr(student, "program_runs", None),
+        "tool_log": tool_log,
+        "suspicious": flag_suspicious(tool_log),
     }

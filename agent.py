@@ -41,6 +41,7 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
         "completion_tokens": 0,
         "questions": [],
         "per_round": [],
+        "tool_log": [],
     }
     seen_calls: dict[tuple[str, str], int] = {}
 
@@ -81,6 +82,7 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
 
         for tool_call in message.tool_calls:
             name = tool_call.function.name
+            stats["tool_log"].append({"name": name, "arguments": tool_call.function.arguments or ""})
 
             if name not in allowed:
                 messages.append({
