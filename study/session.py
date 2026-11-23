@@ -23,7 +23,8 @@ def run_task_session(client, model, task, policy, clarity, student, participant_
     prompts: list[str] = []
     questions: list[dict] = []
     per_round: list[dict] = []
-    tool_log: list[dict] = []
+    tool_log: list[dict] = [] 
+    round_cap_hits = 0
     prompt_tokens = completion_tokens = rounds = 0
     final_text = None
     end_reason = None
@@ -55,6 +56,7 @@ def run_task_session(client, model, task, policy, clarity, student, participant_
             questions.extend(stats["questions"])
             per_round.extend(stats["per_round"])
             tool_log.extend(stats["tool_log"])
+            round_cap_hits += int(stats.get("hit_round_cap", False))
 
             if stats["error"] == "rate_limit":
                 failure = "rate_limit"
@@ -114,4 +116,5 @@ def run_task_session(client, model, task, policy, clarity, student, participant_
         "program_runs": getattr(student, "program_runs", None),
         "tool_log": tool_log,
         "suspicious": flag_suspicious(tool_log),
+        "round_cap_hits": round_cap_hits,
     }

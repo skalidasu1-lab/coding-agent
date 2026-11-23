@@ -1,7 +1,7 @@
 import json
 import time
 
-from openai import RateLimitError
+from openai import BadRequestError, RateLimitError
 
 from call_function import available_functions, call_function
 
@@ -29,13 +29,17 @@ def handle_question(tool_call, ask_callback, max_questions, stats):
 
 def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools=None,
               temperature=0, ask_callback=None, max_questions=0):
-    """Run the tool-calling loop and return a dict describing what happened."""
+    """Run the tool-calling loop and return a dict describing what happened.
+
+    On the last allowed round tool use is switched off (tool_choice='none'), so the
+    model has to answer in text instead of the run ending with nothing."""
     tools = available_functions if tools is None else tools
     allowed = {tool["function"]["name"] for tool in tools}
     stats = {
         "finished": False,
         "final": None,
         "error": None,
+        "hit_round_cap": False,
         "rounds": 0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -45,15 +49,22 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
     }
     seen_calls: dict[tuple[str, str], int] = {}
 
-    for _ in range(max_rounds):
+    for round_number in range(1, max_rounds + 1):
+        extra = {"tool_choice": "none"} if (round_number == max_rounds and max_rounds > 1) else {}
+
+        def create(**more):
+            return client.chat.completions.create(
+                model=model, messages=messages, tools=tools, temperature=temperature, **more
+            )
+
         started = time.time()
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tools,
-                temperature=temperature,
-            )
+            try:
+                response = create(**extra)
+            except BadRequestError:
+                if not extra:
+                    raise
+                response = create()  # this provider rejects tool_choice; try without it
         except RateLimitError:
             stats["error"] = "rate_limit"
             return stats
@@ -70,6 +81,7 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
             "prompt_tokens": round_prompt,
             "completion_tokens": round_completion,
             "seconds": elapsed,
+            "served_model": getattr(response, "model", None),
         })
 
         message = response.choices[0].message
@@ -113,4 +125,5 @@ def run_agent(client, model, messages, workdir, max_rounds, verbose=False, tools
                 print(f"-> {result_message['content']}")
             messages.append(result_message)
 
+    stats["hit_round_cap"] = True
     return stats

@@ -16,7 +16,7 @@ CELLS = [(policy, clarity) for clarity in Clarity for policy in Policy]  # 6 cel
 
 MAX_QUESTIONS = 3
 MAX_STUDENT_PROMPTS = 8
-MAX_AGENT_ROUNDS = 10
+MAX_AGENT_ROUNDS = 15
 TASK_TIME_LIMIT_SECONDS = 12 * 60
 
 

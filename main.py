@@ -3,10 +3,9 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from openai import OpenAI
 
 from agent import run_agent
-from config import MAX_ROUNDS
+from config import MAX_ROUNDS, make_client
 from prompts import system_prompt
 
 
@@ -16,17 +15,15 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--workdir", default="calculator", help="Folder the agent may work in")
     parser.add_argument("--model", default="openrouter/free", help="Model to use")
+    parser.add_argument("--max-rounds", type=int, default=MAX_ROUNDS,
+                        help="Maximum model requests per run")
     args = parser.parse_args()
 
     if not os.path.isdir(args.workdir):
         raise RuntimeError(f"Working directory not found: {args.workdir}")
 
     load_dotenv()
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if api_key is None:
-        raise RuntimeError("OPENROUTER_API_KEY not found. Check your .env file.")
-
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+    client = make_client()
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -36,7 +33,8 @@ def main():
     if args.verbose:
         print(f"User prompt: {args.user_prompt}")
 
-    stats = run_agent(client, args.model, messages, args.workdir, MAX_ROUNDS, verbose=args.verbose)
+    stats = run_agent(client, args.model, messages, args.workdir, args.max_rounds,
+                      verbose=args.verbose)
 
     if args.verbose:
         print(
@@ -50,7 +48,8 @@ def main():
         sys.exit(1)
 
     if not stats["finished"]:
-        print("Error: reached the maximum number of rounds without a final response.")
+        print(f"Error: reached the maximum of {args.max_rounds} rounds without a final response. "
+              "Try again with --max-rounds 30, or a clearer request.")
         sys.exit(1)
 
     print("Final response:")
